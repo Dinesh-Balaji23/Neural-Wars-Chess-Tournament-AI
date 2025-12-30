@@ -39,7 +39,8 @@ class SOLO(AIPlayer):
 
             for move in ordered_moves:
                 self.board.make_move(move)
-                score = self._alpha_beta(depth - 1, alpha, beta)
+                extension = self._extension_for(move)
+                score = self._alpha_beta(depth - 1 + extension, alpha, beta)
                 self.board.undo_move()
 
                 if maximizing and score > current_score:
@@ -133,7 +134,7 @@ class SOLO(AIPlayer):
             self._store_tt(key, depth, value)
             return value
 
-        if depth == 0:
+        if depth <= 0:
             value = self._quiescence(alpha, beta, self.board.white_to_move)
             self._store_tt(key, depth, value)
             return value
@@ -365,7 +366,8 @@ class SOLO(AIPlayer):
     def _mobility_score(self):
         white_moves = self._count_moves_for(True)
         black_moves = self._count_moves_for(False)
-        return (white_moves - black_moves) * 0.8
+        threat_score = self._threat_score()
+        return (white_moves - black_moves) * 0.8 + threat_score
 
     def _count_moves_for(self, white_to_move):
         original_turn = self.board.white_to_move
@@ -373,3 +375,75 @@ class SOLO(AIPlayer):
         moves = len(self.board.get_legal_moves())
         self.board.white_to_move = original_turn
         return moves
+
+    def _extension_for(self, move):
+        extension = 0
+        if move.piece_captured != EMPTY_SQUARE:
+            extension += 1
+        if self.board.is_in_check():
+            extension += 1
+        return extension
+
+    def _threat_score(self):
+        white_threats = self._count_hanging_pieces('w')
+        black_threats = self._count_hanging_pieces('b')
+        return (black_threats - white_threats) * 6
+
+    def _count_hanging_pieces(self, color):
+        opponent = 'b' if color == 'w' else 'w'
+        score = 0
+        for r in range(BOARD_HEIGHT):
+            for c in range(BOARD_WIDTH):
+                piece = self.board.board[r][c]
+                if piece == EMPTY_SQUARE or piece[0] != color:
+                    continue
+                sq = (r, c)
+                attacked = self._is_square_attacked_by(sq, opponent)
+                defended = self._is_square_attacked_by(sq, color)
+                if attacked and not defended:
+                    score += abs(PIECE_VALUES.get(piece, 0)) // 10 + 1
+        return score
+
+    def _is_square_attacked_by(self, square, attacker_color):
+        r, c = square
+        board_state = self.board.board
+        # Pawn attacks
+        if attacker_color == 'w':
+            pawn = WHITE_PAWN
+            directions = [(1, -1), (1, 1)]
+        else:
+            pawn = BLACK_PAWN
+            directions = [(-1, -1), (-1, 1)]
+        for dr, dc in directions:
+            nr, nc = r + dr, c + dc
+            if self.board._is_valid(nr, nc) and board_state[nr][nc] == pawn:
+                return True
+
+        # Knight attacks
+        knight = WHITE_KNIGHT if attacker_color == 'w' else BLACK_KNIGHT
+        for dr, dc in [(2, 1), (2, -1), (-2, 1), (-2, -1), (1, 2), (1, -2), (-1, 2), (-1, -2)]:
+            nr, nc = r + dr, c + dc
+            if self.board._is_valid(nr, nc) and board_state[nr][nc] == knight:
+                return True
+
+        # Bishop attacks
+        bishop = WHITE_BISHOP if attacker_color == 'w' else BLACK_BISHOP
+        for dr, dc in [(1, 1), (1, -1), (-1, 1), (-1, -1)]:
+            nr, nc = r + dr, c + dc
+            while self.board._is_valid(nr, nc):
+                piece = board_state[nr][nc]
+                if piece != EMPTY_SQUARE:
+                    if piece == bishop:
+                        return True
+                    break
+                nr += dr
+                nc += dc
+
+        # King attacks
+        king = WHITE_KING if attacker_color == 'w' else BLACK_KING
+        for dr, dc in [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)]:
+            nr, nc = r + dr, c + dc
+            if self.board._is_valid(nr, nc) and board_state[nr][nc] == king:
+                return True
+
+        return False
