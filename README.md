@@ -56,8 +56,9 @@ By default both White and Black load the `SOLO` agent. Adjust `white_player_type
 
 | Component | Notes |
 | --- | --- |
-| Search | Depth-limited minimax with alpha-beta pruning (default depth = 4). |
-| Move Ordering | Captures prioritized via value heuristics to accelerate pruning. |
+| Search | Iterative deepening minimax with alpha-beta pruning (depth window 2–5). |
+| Move Ordering | Capture priority + history heuristic to accelerate pruning. |
+| Time Control | Adaptive per-move budget based on branching factor and past think times. |
 | Evaluation | Combines piece material, PST bonuses, tempo bonus (+/-3), repetition penalty, and mate scoring. |
 | Compliance | First-line disclaimer confirms zero RL usage; only template imports allowed. |
 
@@ -98,6 +99,7 @@ Full wording is kept in the event portal; this summary mirrors what matters for 
 | Date | Change | Notes |
 | --- | --- | --- |
 | 2025-12-30 | Initial SOLO agent with depth-4 alpha-beta, PST evaluation, README overhaul. | Baseline submission-ready. |
+| 2025-12-30 | Added iterative deepening, history-based move ordering, adaptive time control. | SOLO.py + README synced. |
 
 Add entries here every time we tweak heuristics, depth, or supporting docs so the lineage remains auditable.
 
