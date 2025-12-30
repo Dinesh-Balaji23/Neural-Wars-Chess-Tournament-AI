@@ -18,11 +18,46 @@ class SOLO(AIPlayer):
         self._history_scores = {}
         self._tt = {}
         self._current_pv = []
+        self._opening_lines = [
+            (
+                (6, 0, 5, 0),
+                (1, 3, 2, 3),
+                (7, 0, 5, 1),
+                (0, 3, 2, 2)
+            ),
+            (
+                (6, 1, 5, 1),
+                (1, 0, 2, 0),
+                (7, 3, 5, 2),
+                (0, 0, 2, 1)
+            ),
+            (
+                (6, 2, 5, 2),
+                (1, 1, 2, 1)
+            ),
+            (
+                (6, 3, 5, 3),
+                (1, 2, 2, 2)
+            ),
+            (
+                (7, 0, 5, 1),
+                (0, 3, 2, 2)
+            ),
+            (
+                (7, 3, 5, 2),
+                (0, 0, 2, 1)
+            )
+        ]
 
     def get_best_move(self):
         legal_moves = self.board.get_legal_moves()
         if not legal_moves:
             return None
+
+        book_move = self._opening_book_move(legal_moves)
+        if book_move:
+            self._current_pv = [book_move]
+            return book_move
 
         maximizing = self.board.white_to_move
         ordered_moves = self._order_moves(legal_moves)
@@ -89,6 +124,10 @@ class SOLO(AIPlayer):
         black_pawns = []
         white_bishops = []
         black_bishops = []
+        white_knights = []
+        black_knights = []
+        white_non_king = 0
+        black_non_king = 0
 
         for r in range(BOARD_HEIGHT):
             for c in range(BOARD_WIDTH):
@@ -102,7 +141,12 @@ class SOLO(AIPlayer):
                     white_king = (r, c)
                 elif piece == BLACK_KING:
                     black_king = (r, c)
-                elif piece == WHITE_PAWN:
+                if piece.startswith('w') and piece != WHITE_KING:
+                    white_non_king += 1
+                if piece.startswith('b') and piece != BLACK_KING:
+                    black_non_king += 1
+
+                if piece == WHITE_PAWN:
                     white_pawns.append((r, c))
                 elif piece == BLACK_PAWN:
                     black_pawns.append((r, c))
@@ -110,6 +154,10 @@ class SOLO(AIPlayer):
                     white_bishops.append((r, c))
                 elif piece == BLACK_BISHOP:
                     black_bishops.append((r, c))
+                elif piece == WHITE_KNIGHT:
+                    white_knights.append((r, c))
+                elif piece == BLACK_KNIGHT:
+                    black_knights.append((r, c))
 
         tempo = 3 if self.board.white_to_move else -3
         rep_count = self.board.get_repetition_count()
@@ -122,9 +170,19 @@ class SOLO(AIPlayer):
         pawn_structure = self._pawn_structure_score(white_pawns, black_pawns)
         bishop_activity = self._bishop_activity_score(white_bishops, black_bishops)
         mobility = self._mobility_score()
+        endgame = self._endgame_adjustment(
+            white_pawns,
+            black_pawns,
+            white_bishops,
+            black_bishops,
+            white_knights,
+            black_knights,
+            white_non_king,
+            black_non_king
+        )
 
         return (material + positional + tempo + repetition_penalty +
-                king_safety + pawn_structure + bishop_activity + mobility)
+                king_safety + pawn_structure + bishop_activity + mobility + endgame)
 
     def _alpha_beta(self, depth, alpha, beta):
         if time.time() - self._search_start >= self._time_budget:
@@ -476,3 +534,66 @@ class SOLO(AIPlayer):
                 return True
 
         return False
+
+    def _opening_book_move(self, legal_moves):
+        history = tuple(
+            (m.start_row, m.start_col, m.end_row, m.end_col)
+            for m in self.board.move_log
+        )
+        max_history = len(history)
+        if max_history >= 8:
+            return None
+        for line in self._opening_lines:
+            if history == line[:max_history] and max_history < len(line):
+                target = line[max_history]
+                for move in legal_moves:
+                    if (
+                        move.start_row,
+                        move.start_col,
+                        move.end_row,
+                        move.end_col
+                    ) == target:
+                        return move
+        return None
+
+    def _endgame_adjustment(
+        self,
+        white_pawns,
+        black_pawns,
+        white_bishops,
+        black_bishops,
+        white_knights,
+        black_knights,
+        white_non_king,
+        black_non_king
+    ):
+        bonus = 0
+
+        if white_non_king == 1 and len(white_bishops) == 1 and black_non_king == 0:
+            bonus += 140
+        if black_non_king == 1 and len(black_bishops) == 1 and white_non_king == 0:
+            bonus -= 140
+
+        if (
+            len(white_knights) == 1 and white_non_king == 1
+            and len(black_pawns) >= 1 and black_non_king == len(black_pawns)
+        ):
+            bonus -= 60
+        if (
+            len(black_knights) == 1 and black_non_king == 1
+            and len(white_pawns) >= 1 and white_non_king == len(white_pawns)
+        ):
+            bonus += 60
+
+        white_only_pawns = white_non_king == len(white_pawns)
+        black_only_pawns = black_non_king == len(black_pawns)
+        if (
+            white_only_pawns and black_only_pawns
+            and 0 < len(white_pawns) <= 2
+            and 0 < len(black_pawns) <= 2
+        ):
+            white_dist = min((r for r, _ in white_pawns), default=BOARD_HEIGHT)
+            black_dist = min((BOARD_HEIGHT - 1 - r for r, _ in black_pawns), default=BOARD_HEIGHT)
+            bonus += (black_dist - white_dist) * 4
+
+        return bonus
