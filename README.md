@@ -59,7 +59,7 @@ By default both White and Black load the `SOLO` agent. Adjust `white_player_type
 | Search | Iterative deepening minimax with alpha-beta pruning (depth window 2–5) + quiescence extension. |
 | Move Ordering | Capture priority + history heuristic and root move promotion to accelerate pruning. |
 | Time Control | Adaptive per-move budget based on branching factor and past think times. |
-| Evaluation | Combines piece material, PST bonuses, tempo bonus (+/-3), repetition avoidance penalty, and mate scoring. |
+| Evaluation | Material + PST + king safety, pawn structure, bishop activity, mobility, tempo, repetition penalties, mate scoring. |
 | Caching | Lightweight transposition table keyed on board+depth to reuse scores. |
 | Compliance | First-line disclaimer confirms zero RL usage; only template imports allowed. |
 
@@ -101,6 +101,7 @@ Full wording is kept in the event portal; this summary mirrors what matters for 
 | 2025-12-30 | Initial SOLO agent with depth-4 alpha-beta, PST evaluation, README overhaul. | Baseline submission-ready. |
 | 2025-12-30 | Added iterative deepening, history-based move ordering, adaptive time control. | SOLO.py + README synced. |
 | 2025-12-30 | Added quiescence search, transposition table, repetition avoidance heuristic. | SOLO.py + README synced. |
+| 2025-12-30 | Added king safety, pawn structure, bishop activity, and mobility heuristics. | SOLO.py + README synced. |
 
 Add entries here every time we tweak heuristics, depth, or supporting docs so the lineage remains auditable.
 

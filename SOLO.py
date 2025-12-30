@@ -74,6 +74,12 @@ class SOLO(AIPlayer):
         material = 0
         positional = 0
         board_state = self.board.board
+        white_king = None
+        black_king = None
+        white_pawns = []
+        black_pawns = []
+        white_bishops = []
+        black_bishops = []
 
         for r in range(BOARD_HEIGHT):
             for c in range(BOARD_WIDTH):
@@ -83,6 +89,19 @@ class SOLO(AIPlayer):
                 material += PIECE_VALUES.get(piece, 0)
                 positional += self._pst_bonus(piece, r, c)
 
+                if piece == WHITE_KING:
+                    white_king = (r, c)
+                elif piece == BLACK_KING:
+                    black_king = (r, c)
+                elif piece == WHITE_PAWN:
+                    white_pawns.append((r, c))
+                elif piece == BLACK_PAWN:
+                    black_pawns.append((r, c))
+                elif piece == WHITE_BISHOP:
+                    white_bishops.append((r, c))
+                elif piece == BLACK_BISHOP:
+                    black_bishops.append((r, c))
+
         tempo = 3 if self.board.white_to_move else -3
         rep_count = self.board.get_repetition_count()
         repetition_penalty = 0
@@ -90,7 +109,13 @@ class SOLO(AIPlayer):
             penalty = 7 * rep_count
             repetition_penalty = -penalty if self.board.white_to_move else penalty
 
-        return material + positional + tempo + repetition_penalty
+        king_safety = self._king_safety(white_king, black_king)
+        pawn_structure = self._pawn_structure_score(white_pawns, black_pawns)
+        bishop_activity = self._bishop_activity_score(white_bishops, black_bishops)
+        mobility = self._mobility_score()
+
+        return (material + positional + tempo + repetition_penalty +
+                king_safety + pawn_structure + bishop_activity + mobility)
 
     def _alpha_beta(self, depth, alpha, beta):
         if time.time() - self._search_start >= self._time_budget:
@@ -253,3 +278,98 @@ class SOLO(AIPlayer):
         reordered = [best_move]
         reordered.extend(m for m in moves if m is not best_move)
         return reordered
+
+    def _king_safety(self, white_king, black_king):
+        return self._king_safety_single(white_king, 'w') - self._king_safety_single(black_king, 'b')
+
+    def _king_safety_single(self, king_pos, color):
+        if king_pos is None:
+            return 0
+        row, col = king_pos
+        home_row = BOARD_HEIGHT - 1 if color == 'w' else 0
+        home_distance = abs(row - home_row)
+        center = (BOARD_WIDTH - 1) / 2
+        center_distance = abs(col - center)
+
+        penalty = home_distance * 4 + center_distance * 3
+
+        if self.board._is_square_attacked(king_pos, color):
+            penalty += 15
+        if self.board._is_attacked_by_pawn(king_pos, color):
+            penalty += 12
+        if self.board._is_attacked_by_knight(king_pos, color):
+            penalty += 10
+        if self.board._is_attacked_by_bishop(king_pos, color):
+            penalty += 8
+        if self.board._is_attacked_by_king(king_pos, color):
+            penalty += 20
+
+        return -penalty
+
+    def _pawn_structure_score(self, white_pawns, black_pawns):
+        white_score = self._pawn_structure_single(white_pawns, 'w')
+        black_score = self._pawn_structure_single(black_pawns, 'b')
+        return white_score - black_score
+
+    def _pawn_structure_single(self, pawns, color):
+        if not pawns:
+            return 0
+        score = 0
+        for row, col in pawns:
+            if self._is_passed_pawn(row, col, color):
+                score += 14
+            if self._is_isolated_pawn(col, color):
+                score -= 10
+        return score
+
+    def _is_passed_pawn(self, row, col, color):
+        opponent_pawn = BLACK_PAWN if color == 'w' else WHITE_PAWN
+        direction = -1 if color == 'w' else 1
+        r = row + direction
+        while 0 <= r < BOARD_HEIGHT:
+            for dc in (-1, 0, 1):
+                c = col + dc
+                if 0 <= c < BOARD_WIDTH and self.board.board[r][c] == opponent_pawn:
+                    return False
+            r += direction
+        return True
+
+    def _is_isolated_pawn(self, col, color):
+        friendly_pawn = WHITE_PAWN if color == 'w' else BLACK_PAWN
+        for c in (col - 1, col + 1):
+            if not (0 <= c < BOARD_WIDTH):
+                continue
+            for r in range(BOARD_HEIGHT):
+                if self.board.board[r][c] == friendly_pawn:
+                    return False
+        return True
+
+    def _bishop_activity_score(self, white_bishops, black_bishops):
+        white_score = self._bishop_block_penalty(white_bishops, 'w')
+        black_score = self._bishop_block_penalty(black_bishops, 'b')
+        return white_score - black_score
+
+    def _bishop_block_penalty(self, bishops, color):
+        if not bishops:
+            return 0
+        friendly_pawn = WHITE_PAWN if color == 'w' else BLACK_PAWN
+        penalty = 0
+        for r, c in bishops:
+            for dr, dc in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+                nr, nc = r + dr, c + dc
+                if self.board._is_valid(nr, nc) and self.board.board[nr][nc] == friendly_pawn:
+                    penalty -= 6
+                    break
+        return penalty
+
+    def _mobility_score(self):
+        white_moves = self._count_moves_for(True)
+        black_moves = self._count_moves_for(False)
+        return (white_moves - black_moves) * 0.8
+
+    def _count_moves_for(self, white_to_move):
+        original_turn = self.board.white_to_move
+        self.board.white_to_move = white_to_move
+        moves = len(self.board.get_legal_moves())
+        self.board.white_to_move = original_turn
+        return moves
