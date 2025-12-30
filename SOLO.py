@@ -17,6 +17,7 @@ class SOLO(AIPlayer):
         self._mate_value = 100000
         self._history_scores = {}
         self._tt = {}
+        self._current_pv = []
 
     def get_best_move(self):
         legal_moves = self.board.get_legal_moves()
@@ -36,19 +37,25 @@ class SOLO(AIPlayer):
             alpha, beta = float('-inf'), float('inf')
             current_best = None
             current_score = float('-inf') if maximizing else float('inf')
+            current_line = []
 
-            for move in ordered_moves:
+            for index, move in enumerate(ordered_moves):
                 self.board.make_move(move)
-                extension = self._extension_for(move)
-                score = self._alpha_beta(depth - 1 + extension, alpha, beta)
+                gives_check = self.board.is_in_check()
+                extension = self._extension_for(move, gives_check)
+                reduction = self._late_move_reduction(depth, index, move, gives_check)
+                next_depth = max(0, depth - 1 + extension - reduction)
+                score, child_line = self._alpha_beta(next_depth, alpha, beta)
                 self.board.undo_move()
 
                 if maximizing and score > current_score:
                     current_score = score
                     current_best = move
+                    current_line = child_line
                 elif not maximizing and score < current_score:
                     current_score = score
                     current_best = move
+                    current_line = child_line
 
                 if maximizing:
                     alpha = max(alpha, current_score)
@@ -63,6 +70,7 @@ class SOLO(AIPlayer):
                 best_score = current_score
                 ordered_moves = self._promote_root_move(ordered_moves, best_move)
                 self._record_history(best_move, depth)
+                self._current_pv = [best_move] + current_line
 
             if self._time_exceeded:
                 break
@@ -121,50 +129,64 @@ class SOLO(AIPlayer):
     def _alpha_beta(self, depth, alpha, beta):
         if time.time() - self._search_start >= self._time_budget:
             self._time_exceeded = True
-            return self.evaluate_board()
+            return self.evaluate_board(), []
 
         key = (self._hash_position(), depth)
         tt_entry = self._tt.get(key)
         if tt_entry and tt_entry[0] >= depth:
-            return tt_entry[1]
+            return tt_entry[1], []
 
         legal_moves = self.board.get_legal_moves()
         if not legal_moves:
             value = self._evaluate_leaf(depth, legal_moves)
             self._store_tt(key, depth, value)
-            return value
+            return value, []
 
         if depth <= 0:
             value = self._quiescence(alpha, beta, self.board.white_to_move)
             self._store_tt(key, depth, value)
-            return value
+            return value, []
 
         maximizing = self.board.white_to_move
         if maximizing:
             value = float('-inf')
-            for move in self._order_moves(legal_moves):
+            best_line = []
+            for index, move in enumerate(self._order_moves(legal_moves)):
                 self.board.make_move(move)
-                score = self._alpha_beta(depth - 1, alpha, beta)
+                gives_check = self.board.is_in_check()
+                extension = self._extension_for(move, gives_check)
+                reduction = self._late_move_reduction(depth, index, move, gives_check)
+                next_depth = max(0, depth - 1 + extension - reduction)
+                score, child_line = self._alpha_beta(next_depth, alpha, beta)
                 self.board.undo_move()
                 value = max(value, score)
+                if score == value:
+                    best_line = [move] + child_line
                 alpha = max(alpha, value)
                 if beta <= alpha or self._time_exceeded:
                     break
             self._store_tt(key, depth, value)
-            return value
+            return value, best_line
 
         value = float('inf')
-        for move in self._order_moves(legal_moves):
+        best_line = []
+        for index, move in enumerate(self._order_moves(legal_moves)):
             self.board.make_move(move)
-            score = self._alpha_beta(depth - 1, alpha, beta)
+            gives_check = self.board.is_in_check()
+            extension = self._extension_for(move, gives_check)
+            reduction = self._late_move_reduction(depth, index, move, gives_check)
+            next_depth = max(0, depth - 1 + extension - reduction)
+            score, child_line = self._alpha_beta(next_depth, alpha, beta)
             self.board.undo_move()
             value = min(value, score)
+            if score == value:
+                best_line = [move] + child_line
             beta = min(beta, value)
             if beta <= alpha or self._time_exceeded:
                 break
 
         self._store_tt(key, depth, value)
-        return value
+        return value, best_line
 
     def _evaluate_leaf(self, depth, legal_moves):
         if not legal_moves:
@@ -376,13 +398,20 @@ class SOLO(AIPlayer):
         self.board.white_to_move = original_turn
         return moves
 
-    def _extension_for(self, move):
+    def _extension_for(self, move, gives_check):
         extension = 0
         if move.piece_captured != EMPTY_SQUARE:
             extension += 1
-        if self.board.is_in_check():
+        if gives_check:
             extension += 1
         return extension
+
+    def _late_move_reduction(self, depth, move_index, move, gives_check):
+        if depth < 3 or move_index < 3:
+            return 0
+        if move.piece_captured != EMPTY_SQUARE or gives_check:
+            return 0
+        return 1
 
     def _threat_score(self):
         white_threats = self._count_hanging_pieces('w')
