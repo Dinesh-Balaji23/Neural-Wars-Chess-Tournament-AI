@@ -8,19 +8,28 @@ import time
 
 
 class SOLO(AIPlayer):
+    _instance_counter = 0
+
     def __init__(self, board):
         super().__init__(board)
         self.min_depth = 2
         self.max_depth = 5
         self.time_budget = 0.6
+
         self._avg_move_time = 0.0
         self._mate_value = 100000
         self._history_scores = {}
         self._tt = {}
         self._current_pv = []
+        role = "White" if SOLO._instance_counter % 2 == 0 else "Black"
+        SOLO._instance_counter += 1
+        alias = f"SOLO_{role}"
+        if self.__class__.__name__ != alias:
+            self.__class__ = type(alias, (self.__class__,), {})
         self._opening_lines = [
             (
                 (6, 0, 5, 0),
+
                 (1, 3, 2, 3),
                 (7, 0, 5, 1),
                 (0, 3, 2, 2)
